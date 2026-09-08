@@ -36,7 +36,7 @@ import { loadThemeConfig } from "./utils/themeLoader";
 import { countOldFormatThemes, isOldFormatTheme, migrateThemeColors } from "./utils/themeMigration";
 import { getAppSettings, saveAppSettings } from "./utils/appSettings";
 import { cloneDefaultKeybinds, loadKeybinds, matchesKeybind } from "./utils/keybinds";
-import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, setActiveDateFormat, getActiveDateFormat, normalizeLegacyDateLabel } from "./utils/dateUtils";
+import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, setActiveDateFormat, getActiveDateFormat, setActiveTimeFormat, getActiveTimeFormat, normalizeLegacyDateLabel } from "./utils/dateUtils";
 import { parseFilterQuery } from "./utils/filterUtils";
 import useEscapeKey from "./hooks/useEscapeKey";
 import "./styles/index.css";
@@ -255,6 +255,8 @@ function App() {
   // Sync the date-format lens with the open timeline before children render.
   const fileDateFormat = timelineData?.file?.dateFormat || "MDY";
   if (getActiveDateFormat() !== fileDateFormat) setActiveDateFormat(fileDateFormat);
+  const fileTimeFormat = timelineData?.file?.timeFormat || (fileDateFormat === "ISO" ? "24" : "12");
+  if (getActiveTimeFormat() !== fileTimeFormat) setActiveTimeFormat(fileTimeFormat);
   const [currentTimelineId, setCurrentTimelineId] = useState(null);
   const currentTimelineIdRef = useRef(null);
   const [isNewTimelineModalOpen, setIsNewTimelineModalOpen] = useState(false);
@@ -1243,6 +1245,7 @@ function App() {
     // Patch: only the settings the user changed are present, so untouched fields aren't clobbered.
     const { title, start, end } = patch;
     if ("dateFormat" in patch) setActiveDateFormat(patch.dateFormat || "MDY");
+    if ("timeFormat" in patch) setActiveTimeFormat(patch.timeFormat || "12");
     const parsedStart = parseTimelineInput(start);
     const parsedEnd = parseTimelineInput(end);
     setTimelineData((prevData) => {
@@ -1280,6 +1283,8 @@ function App() {
       if (!nextFile.scaleType || nextFile.scaleType === "default") delete nextFile.scaleType;
       if (!nextFile.logScaleFactor || nextFile.scaleType !== "logarithmic") delete nextFile.logScaleFactor;
       if (!nextFile.dateFormat || nextFile.dateFormat === "MDY") delete nextFile.dateFormat;
+      const defaultTimeFormat = nextFile.dateFormat === "ISO" ? "24" : "12";
+      if (!nextFile.timeFormat || nextFile.timeFormat === defaultTimeFormat) delete nextFile.timeFormat;
       if (!nextFile.layout) delete nextFile.layout;
       if (!nextFile.branchOrdering) delete nextFile.branchOrdering;
       if (!nextFile.fixedEventHeight) delete nextFile.fixedEventHeight;

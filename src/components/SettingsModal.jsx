@@ -55,6 +55,7 @@ export default function SettingsModal({
   const [fontFamily, setFontFamily] = useState("default");
   const [useCalendar, setUseCalendar] = useState(false);
   const [dateFormat, setDateFormat] = useState("MDY");
+  const [timeFormat, setTimeFormat] = useState("12");
   const [scaleSections, setScaleSections] = useState([]);
   const [scaleType, setScaleType] = useState("default");
   const [logScaleFactor, setLogScaleFactor] = useState(10);
@@ -115,6 +116,7 @@ export default function SettingsModal({
     font: fontFamily,
     useCalendar: useCalendar || undefined,
     dateFormat: dateFormat !== "MDY" ? dateFormat : undefined,
+    timeFormat: timeFormat !== (dateFormat === "ISO" ? "24" : "12") ? timeFormat : undefined,
     scaleType: scaleType !== "default" ? scaleType : undefined,
     logScaleFactor: scaleType === "logarithmic" ? logScaleFactor : undefined,
     layout,
@@ -272,6 +274,7 @@ export default function SettingsModal({
         setLayout(timelineData.file.layout || "Horizontal");
         setUseCalendar(Boolean(timelineData.file.useCalendar ?? timelineData.file.useDays ?? timelineData.file.useMonths));
         setDateFormat(timelineData.file.dateFormat || "MDY");
+        setTimeFormat(timelineData.file.timeFormat || (timelineData.file.dateFormat === "ISO" ? "24" : "12"));
         setScaleSections(loadScaleSections(timelineData.file.scaleSections, timelineData.file.breaks));
         setScaleType(timelineData.file.scaleType || "default");
         setLogScaleFactor(Number.isFinite(Number(timelineData.file.logScaleFactor)) && Number(timelineData.file.logScaleFactor) >= 1 ? Number(timelineData.file.logScaleFactor) : 10);
@@ -435,6 +438,7 @@ export default function SettingsModal({
     fontFamily,
     useCalendar,
     dateFormat,
+    timeFormat,
     layout,
     scaleSections,
     scaleType,
@@ -1269,6 +1273,24 @@ export default function SettingsModal({
                     <option value="MDY">MM/DD/YYYY</option>
                     <option value="DMY">DD/MM/YYYY</option>
                     <option value="ISO">YYYY-MM-DD</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Time Format */}
+              <div className="settings-row">
+                <div className="settings-row-left">
+                  <div className="settings-row-label">Time Format</div>
+                  <div className="settings-row-description">How a time of day is shown and typed, when one is set on an event, span, or era.</div>
+                </div>
+                <div className="settings-row-right">
+                  <select
+                    className="settings-select"
+                    value={timeFormat}
+                    onChange={(e) => setTimeFormat(e.target.value)}
+                  >
+                    <option value="12">1:30 PM</option>
+                    <option value="24">13:30</option>
                   </select>
                 </div>
               </div>

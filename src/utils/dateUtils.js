@@ -29,6 +29,32 @@ export const setActiveDateFormat = (fmt) => {
 };
 export const getActiveDateFormat = () => activeDateFormat;
 
+// Time-of-day is metadata alongside a day-precision date, not part of the sortable value.
+let activeTimeFormat = "12"; // "12" | "24"
+export const setActiveTimeFormat = (fmt) => {
+  activeTimeFormat = fmt === "24" ? "24" : "12";
+};
+export const getActiveTimeFormat = () => activeTimeFormat;
+
+export const isValidTimeOfDay = (time) => typeof time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+
+export const formatTimeOfDay = (time, fmt = activeTimeFormat) => {
+  if (!isValidTimeOfDay(time)) return null;
+  const [h, m] = time.split(":").map(Number);
+  if (fmt === "24") return `${pad2(h)}:${pad2(m)}`;
+  const period = h < 12 ? "AM" : "PM";
+  const h12 = h % 12 || 12;
+  return `${h12}:${pad2(m)} ${period}`;
+};
+
+// Read-only "date, time" combo for cards/tooltips/sidebar rows that show one string.
+export const displayDateTimeLabel = (label, time) => {
+  const dateText = displayDateLabel(label);
+  const timeText = formatTimeOfDay(time);
+  if (!timeText) return dateText;
+  return dateText ? `${dateText}, ${timeText}` : timeText;
+};
+
 const pad2 = (n) => String(n).padStart(2, "0");
 const pad4 = (n) => (Number.isFinite(n) && n >= 0 && n < 1000 ? String(n).padStart(4, "0") : `${n}`);
 // "1/1/24" is 2024 shorthand, but a written-out "0024" stays year 24.

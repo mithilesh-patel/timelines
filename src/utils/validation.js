@@ -1,4 +1,4 @@
-import { parseTimelineInput, snapToMonthGrid } from "./dateUtils";
+import { parseTimelineInput, snapToMonthGrid, isValidTimeOfDay } from "./dateUtils";
 
 // --- ID / tag / filename validators ---
 
@@ -199,6 +199,12 @@ export const buildValidatedUpdate = (draft, timelineData) => {
     } else {
       delete nextData.dateLabel;
     }
+    // Time-of-day only means anything once the date resolves to a specific day.
+    if (isValidTimeOfDay(draft.time) && parsedDate.precision === "day") {
+      nextData.time = draft.time;
+    } else {
+      delete nextData.time;
+    }
   } else {
     nextData.start =
       useMonths && parsedStart.precision !== "day"
@@ -217,6 +223,16 @@ export const buildValidatedUpdate = (draft, timelineData) => {
       nextData.endLabel = parsedEnd.label;
     } else {
       delete nextData.endLabel;
+    }
+    if (isValidTimeOfDay(draft.startTime) && parsedStart.precision === "day") {
+      nextData.startTime = draft.startTime;
+    } else {
+      delete nextData.startTime;
+    }
+    if (isValidTimeOfDay(draft.endTime) && parsedEnd.precision === "day") {
+      nextData.endTime = draft.endTime;
+    } else {
+      delete nextData.endTime;
     }
   }
 

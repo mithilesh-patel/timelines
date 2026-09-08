@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Tooltip, Rectangle, useMap, useMapEven
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { formatYear, withApproxLabel, formatApproxRange } from "../utils/timelineUtils";
-import { displayDateLabel } from "../utils/dateUtils";
+import { displayDateTimeLabel } from "../utils/dateUtils";
 
 const DEFAULT_COLOR = "#6b7280";
 const TYPE_LABEL = { event: "Event", span: "Span", era: "Era" };
@@ -116,11 +116,11 @@ function isMarkerVisibleAtViewportYear(el, viewportYear, fileConfig) {
 function formatElementDate(el, fileConfig) {
   const { negID, posID, approxID, useCalendar, hideDecimals } = fileConfig ?? {};
   if (el.type === "event") {
-    const year = displayDateLabel(el.dateLabel) ?? (el.date != null ? formatYear(el.date, negID, posID, useCalendar === true, hideDecimals) : null);
+    const year = displayDateTimeLabel(el.dateLabel, el.time) ?? (el.date != null ? formatYear(el.date, negID, posID, useCalendar === true, hideDecimals) : null);
     return withApproxLabel(year ?? "", approxID, el.approximate === true);
   }
-  const start = displayDateLabel(el.startLabel) ?? (el.start != null ? formatYear(el.start, negID, posID, useCalendar === true, hideDecimals) : null);
-  const end = displayDateLabel(el.endLabel) ?? (el.end != null ? formatYear(el.end, negID, posID, useCalendar === true, hideDecimals) : null);
+  const start = displayDateTimeLabel(el.startLabel, el.startTime) ?? (el.start != null ? formatYear(el.start, negID, posID, useCalendar === true, hideDecimals) : null);
+  const end = displayDateTimeLabel(el.endLabel, el.endTime) ?? (el.end != null ? formatYear(el.end, negID, posID, useCalendar === true, hideDecimals) : null);
   if (start && end) return formatApproxRange(el, start, end, approxID);
   if (start) return withApproxLabel(start, approxID, el.approxStart === true);
   return withApproxLabel(end ?? "", approxID, el.approxEnd === true);
