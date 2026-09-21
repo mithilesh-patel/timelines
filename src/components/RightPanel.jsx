@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
-import { Maximize2, Minimize2, Underline, Link, Trash2, Unlink, ChevronLeft, ChevronRight, ChevronDown, Pencil, ExternalLink, Calendar, Clock, FileText, BookOpen, ImagePlus, RotateCcw, X } from "lucide-react";
+import { Maximize2, Minimize2, Underline, Link, Trash2, Unlink, ChevronLeft, ChevronRight, ChevronDown, Pencil, ExternalLink, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X } from "lucide-react";
 import NoteEditor from "./NoteEditor";
 import WikiSection from "./WikiSection";
 import SourcesSection from "./SourcesSection";
@@ -103,6 +103,8 @@ export default function RightPanel({
   nextElement,
   readOnly = false,
   onClose,
+  coordPickTargetId = null,
+  onRequestCoordPick,
 }) {
   const [formData, setFormData] = useState(null);
   const [validationErrors, setValidationErrors] = useState([]);
@@ -1714,6 +1716,22 @@ export default function RightPanel({
                   <label>Coordinates</label>
                   <div className="edit-separator" />
                   <div className="coord-inputs">
+                    {onRequestCoordPick && selectedElement?.id && (() => {
+                      // the picker targets the saved element, so a draft id rename cannot orphan it
+                      const isPicking = coordPickTargetId === selectedElement.id;
+                      return (
+                        <button
+                          type="button"
+                          className={`coord-pick-button${isPicking ? " is-active" : ""}`}
+                          onClick={() => onRequestCoordPick(selectedElement.id, formData.title)}
+                          aria-label="Pick coordinates on the map"
+                          aria-pressed={isPicking}
+                          title={isPicking ? "Cancel picking" : "Pick coordinates on the map"}
+                        >
+                          <MapPin size={14} />
+                        </button>
+                      );
+                    })()}
                     <input
                       id="lat"
                       type="number"

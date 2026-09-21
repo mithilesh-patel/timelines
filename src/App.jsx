@@ -295,6 +295,10 @@ function App() {
   const handleFocusSpan = useCallback((span) => {
     setFocusSpanRequest((prev) => ({ id: span.id, title: span.title, n: (prev?.n ?? 0) + 1 }));
   }, []);
+  const [coordPickRequest, setCoordPickRequest] = useState(null);
+  const handleRequestCoordPick = useCallback((id, title) => {
+    setCoordPickRequest((prev) => (prev?.id === id ? null : { id, title, n: (prev?.n ?? 0) + 1 }));
+  }, []);
   const [viewportYear, setViewportYear] = useState(null);
   const handleViewportYearChange = useCallback((year) => {
     startTransition(() => {
@@ -1034,6 +1038,44 @@ function App() {
       return updatedData;
     });
   };
+
+  // Coordinates picked by clicking the map while the right panel picker is armed
+  const handleCoordinatePicked = useCallback(({ lat, lng }) => {
+    const targetId = coordPickRequest?.id;
+    if (!targetId || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    setTimelineData((prevData) => {
+      if (!prevData?.elements?.some((el) => el.id === targetId)) return prevData;
+      const updatedData = {
+        ...prevData,
+        elements: prevData.elements.map((el) => (el.id === targetId ? { ...el, lat, lng } : el)),
+      };
+
+      saveCurrentTimeline(updatedData).catch(console.error);
+
+      return updatedData;
+    });
+
+    setCoordPickRequest(null);
+  }, [coordPickRequest?.id, saveCurrentTimeline]);
+
+  useEffect(() => {
+    if (!coordPickRequest?.id) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") setCoordPickRequest(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [coordPickRequest?.id]);
+
+  // Drop the armed picker when its element is deselected, deleted, or maps get turned off
+  useEffect(() => {
+    if (!coordPickRequest?.id) return;
+    const stillValid = selectedId === coordPickRequest.id &&
+      timelineData?.file?.useMaps &&
+      timelineData?.elements?.some((el) => el.id === coordPickRequest.id);
+    if (!stillValid) setCoordPickRequest(null);
+  }, [coordPickRequest?.id, selectedId, timelineData?.file?.useMaps, timelineData?.elements]);
 
   const handleAddEvent = (groupId, clickYear, clickCoords) => {
     if (!timelineData?.file) return;
@@ -2514,6 +2556,8 @@ function App() {
               onChipQueryChange={setChipQuery}
               tagFilterRequest={tagFilterRequest}
               focusSpanRequest={focusSpanRequest}
+              coordPickRequest={coordPickRequest}
+              onCoordinatePicked={handleCoordinatePicked}
               tagColors={timelineData.file?.tagColors || {}}
               keybinds={keybinds}
               onSetViewMode={filteredTimelineData?.file?.useSpreadsheet ? setViewMode : undefined}
@@ -2648,6 +2692,8 @@ function App() {
                 onSelectNext={handleSelectNext}
                 prevElement={selectionNavigation.prevElement}
                 nextElement={selectionNavigation.nextElement}
+                coordPickTargetId={coordPickRequest?.id ?? null}
+                onRequestCoordPick={handleRequestCoordPick}
               />
               </ErrorBoundary>
             </aside>

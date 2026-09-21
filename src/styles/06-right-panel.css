@@ -2978,3 +2978,29 @@
   color: var(--text-subtle);
   line-height: 1;
 }
+
+.coord-pick-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.coord-pick-button:hover {
+  background: var(--accent-color);
+  color: var(--text-primary);
+}
+
+.coord-pick-button.is-active {
+  background: var(--link-color);
+  color: var(--app-bg);
+}

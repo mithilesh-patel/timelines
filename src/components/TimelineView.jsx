@@ -18,7 +18,7 @@ import { isFontReady, watchFontLoad } from "../utils/fontGate";
 import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, fractionalYearToDate, daysInMonth, todayFractionalYear, displayDateTimeLabel, formatDuration } from "../utils/dateUtils";
 import { withAlpha, blendColors, normalizeColor } from "../utils/colorUtils";
 import { parseFilterQuery, matchesFilter, tokenizeFilterQuery, buildFilterContext, normalizeTag, quoteFilterValue } from "../utils/filterUtils";
-import { FileJson, Image, Video, Settings, Plus, Minus, CopyPlus, Trash2, Edit2, ListFilter, Play, Pause, Tag, Eye, EyeOff, Map as MapIcon, GanttChartSquare, Table2, ExternalLink, HelpCircle, Maximize2, X, History, Crosshair } from "lucide-react";
+import { FileJson, Image, Video, Settings, Plus, Minus, CopyPlus, Trash2, Edit2, ListFilter, Play, Pause, Tag, Eye, EyeOff, Map as MapIcon, MapPin, GanttChartSquare, Table2, ExternalLink, HelpCircle, Maximize2, X, History, Crosshair } from "lucide-react";
 import { ICON_MAP } from "../config/elementIcons";
 
 const FILTER_HISTORY_KEY = "timelines-filter-query-history";
@@ -437,6 +437,8 @@ const TimelineView = forwardRef(function TimelineView({
   onChipQueryChange,
   tagFilterRequest,
   focusSpanRequest,
+  coordPickRequest,
+  onCoordinatePicked,
   suppressFocusSelect = false,
   tagColors = {},
   keybinds = {},
@@ -1982,6 +1984,16 @@ const TimelineView = forwardRef(function TimelineView({
     if (!suppressFocusSelect) handleSelect(spanId);
     pendingCenterRef.current = spanId;
   };
+
+  // Coordinate picker opened from the right panel switches to map view
+  const lastCoordPickRequestRef = useRef(coordPickRequest?.n ?? 0);
+  useEffect(() => {
+    const n = coordPickRequest?.n ?? 0;
+    if (!n || n === lastCoordPickRequestRef.current) return;
+    lastCoordPickRequestRef.current = n;
+    if (file.useMaps) setShowMap(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coordPickRequest]);
 
   // Span focused from the sidebar
   const lastFocusRequestRef = useRef(focusSpanRequest?.n ?? 0);
@@ -4701,8 +4713,21 @@ const TimelineView = forwardRef(function TimelineView({
             viewportYear={deferredMapViewportYear}
             selectedId={selectedId}
             fileConfig={file}
+            pickMode={!!coordPickRequest?.id}
+            onPickCoordinate={onCoordinatePicked}
           />
         </Suspense>
+      )}
+
+      {showMap && coordPickRequest?.id && (
+        <div className="map-pick-banner">
+          <MapPin size={14} />
+          <span>
+            Click the map to set coordinates
+            {coordPickRequest.title ? ` for "${coordPickRequest.title}"` : ""}
+          </span>
+          <span className="map-pick-banner-hint">Esc to cancel</span>
+        </div>
       )}
 
       <div className="timeline-canvas-bar" style={{ right: `${zoomButtonOffset}px` }}>
