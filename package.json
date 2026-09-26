@@ -49,12 +49,6 @@
         "AppImage"
       ],
       "icon": "public/favicon/icon.png"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "sreegjl",
-      "repo": "timelines",
-      "releaseType": "prerelease"
     }
   },
   "overrides": {
