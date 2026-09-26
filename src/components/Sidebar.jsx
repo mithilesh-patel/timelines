@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef, useLayoutEffect, Fragment } from 
 import { parseFilterQuery, matchesFilter, buildFilterContext, tokenizeFilterQuery, normalizeTag } from "../utils/filterUtils";
 import { PanelLeft, PanelRight, ChevronDown, FilePlus, File, Copy, FileJson, Image, Video, Settings, ChevronRight, ArrowLeft, Edit2, Trash2, Plus, Tag, Eye, EyeOff, Target, List, Layers3, Search, MoreVertical, Square, SquareDashed, ArrowUpDown, Check, Package } from "lucide-react";
 import { formatYear, withApproxLabel, formatApproxRange } from "../utils/timelineUtils";
-import { displayDateLabel } from "../utils/dateUtils";
+import { displayDateTimeLabel } from "../utils/dateUtils";
 import { ICON_MAP as iconMap } from "../config/elementIcons";
 import ColorPicker from "./ColorPicker";
 import "../styles/07-modals-menus.css";
@@ -155,12 +155,12 @@ function ElementRow({ element, selectedId, onSelect, listRef, lastScrollTopRef, 
   const dateText = (isSpan || isEra)
     ? formatApproxRange(
         element,
-        displayDateLabel(element.startLabel) ?? fmtYear(element.start),
-        displayDateLabel(element.endLabel) ?? fmtYear(element.end),
+        displayDateTimeLabel(element.startLabel, element.startTime) ?? fmtYear(element.start),
+        displayDateTimeLabel(element.endLabel, element.endTime) ?? fmtYear(element.end),
         approxID,
         "–"
       )
-    : withApproxLabel(displayDateLabel(element.dateLabel) ?? fmtYear(element.date), approxID, element.approximate === true);
+    : withApproxLabel(displayDateTimeLabel(element.dateLabel, element.time) ?? fmtYear(element.date), approxID, element.approximate === true);
   return (
     <button
       className={`sb-el-row${isSelected ? " is-selected" : ""}`}
@@ -644,8 +644,8 @@ export default function Sidebar({
 
   const formatRange = (el) => formatApproxRange(
     el,
-    displayDateLabel(el.startLabel) ?? fmtYear(el.start),
-    displayDateLabel(el.endLabel) ?? fmtYear(el.end),
+    displayDateTimeLabel(el.startLabel, el.startTime) ?? fmtYear(el.start),
+    displayDateTimeLabel(el.endLabel, el.endTime) ?? fmtYear(el.end),
     file?.approxID
   );
 
@@ -1596,7 +1596,7 @@ export default function Sidebar({
               {(openEvents || searchActive) && (
                 <div className="sb-section-body">
                   {visibleEvents.map((ev) => (
-                    <SidebarRow key={ev.id} item={ev} rightText={withApproxLabel(displayDateLabel(ev.dateLabel) ?? fmtYear(ev.date), file?.approxID, ev.approximate === true)} level={0} selectedId={selectedId} onSelect={onSelect} listRef={listRef} lastScrollTopRef={lastScrollTopRef} setElementMenu={setElementMenu} spanFocus={spanFocus} />
+                    <SidebarRow key={ev.id} item={ev} rightText={withApproxLabel(displayDateTimeLabel(ev.dateLabel, ev.time) ?? fmtYear(ev.date), file?.approxID, ev.approximate === true)} level={0} selectedId={selectedId} onSelect={onSelect} listRef={listRef} lastScrollTopRef={lastScrollTopRef} setElementMenu={setElementMenu} spanFocus={spanFocus} />
                   ))}
                 </div>
               )}
@@ -2044,7 +2044,7 @@ export default function Sidebar({
                             <span className="sidebar-group-element-title">{element.title || element.id}</span>
                             <span className="sidebar-group-element-range">
                               {element.type === "event"
-                                ? withApproxLabel(displayDateLabel(element.dateLabel) ?? fmtYear(element.date), file?.approxID, element.approximate === true)
+                                ? withApproxLabel(displayDateTimeLabel(element.dateLabel, element.time) ?? fmtYear(element.date), file?.approxID, element.approximate === true)
                                 : formatRange(element)}
                             </span>
                           </button>

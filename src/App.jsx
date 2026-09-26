@@ -36,7 +36,7 @@ import { loadThemeConfig } from "./utils/themeLoader";
 import { countOldFormatThemes, isOldFormatTheme, migrateThemeColors } from "./utils/themeMigration";
 import { getAppSettings, saveAppSettings } from "./utils/appSettings";
 import { cloneDefaultKeybinds, loadKeybinds, matchesKeybind } from "./utils/keybinds";
-import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, setActiveDateFormat, getActiveDateFormat, normalizeLegacyDateLabel } from "./utils/dateUtils";
+import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, setActiveDateFormat, getActiveDateFormat, setActiveTimeFormat, getActiveTimeFormat, normalizeLegacyDateLabel } from "./utils/dateUtils";
 import { parseFilterQuery } from "./utils/filterUtils";
 import useEscapeKey from "./hooks/useEscapeKey";
 import "./styles/index.css";
@@ -255,6 +255,8 @@ function App() {
   // Sync the date-format lens with the open timeline before children render.
   const fileDateFormat = timelineData?.file?.dateFormat || "MDY";
   if (getActiveDateFormat() !== fileDateFormat) setActiveDateFormat(fileDateFormat);
+  const fileTimeFormat = timelineData?.file?.timeFormat || (fileDateFormat === "ISO" ? "24" : "12");
+  if (getActiveTimeFormat() !== fileTimeFormat) setActiveTimeFormat(fileTimeFormat);
   const [currentTimelineId, setCurrentTimelineId] = useState(null);
   const currentTimelineIdRef = useRef(null);
   const [isNewTimelineModalOpen, setIsNewTimelineModalOpen] = useState(false);
@@ -292,6 +294,10 @@ function App() {
   const [focusSpanRequest, setFocusSpanRequest] = useState(null);
   const handleFocusSpan = useCallback((span) => {
     setFocusSpanRequest((prev) => ({ id: span.id, title: span.title, n: (prev?.n ?? 0) + 1 }));
+  }, []);
+  const [coordPickRequest, setCoordPickRequest] = useState(null);
+  const handleRequestCoordPick = useCallback((id, title) => {
+    setCoordPickRequest((prev) => (prev?.id === id ? null : { id, title, n: (prev?.n ?? 0) + 1 }));
   }, []);
   const [viewportYear, setViewportYear] = useState(null);
   const handleViewportYearChange = useCallback((year) => {
@@ -1033,6 +1039,44 @@ function App() {
     });
   };
 
+  // Coordinates picked by clicking the map while the right panel picker is armed
+  const handleCoordinatePicked = useCallback(({ lat, lng }) => {
+    const targetId = coordPickRequest?.id;
+    if (!targetId || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    setTimelineData((prevData) => {
+      if (!prevData?.elements?.some((el) => el.id === targetId)) return prevData;
+      const updatedData = {
+        ...prevData,
+        elements: prevData.elements.map((el) => (el.id === targetId ? { ...el, lat, lng } : el)),
+      };
+
+      saveCurrentTimeline(updatedData).catch(console.error);
+
+      return updatedData;
+    });
+
+    setCoordPickRequest(null);
+  }, [coordPickRequest?.id, saveCurrentTimeline]);
+
+  useEffect(() => {
+    if (!coordPickRequest?.id) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") setCoordPickRequest(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [coordPickRequest?.id]);
+
+  // Drop the armed picker when its element is deselected, deleted, or maps get turned off
+  useEffect(() => {
+    if (!coordPickRequest?.id) return;
+    const stillValid = selectedId === coordPickRequest.id &&
+      timelineData?.file?.useMaps &&
+      timelineData?.elements?.some((el) => el.id === coordPickRequest.id);
+    if (!stillValid) setCoordPickRequest(null);
+  }, [coordPickRequest?.id, selectedId, timelineData?.file?.useMaps, timelineData?.elements]);
+
   const handleAddEvent = (groupId, clickYear, clickCoords) => {
     if (!timelineData?.file) return;
     const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -1243,6 +1287,7 @@ function App() {
     // Patch: only the settings the user changed are present, so untouched fields aren't clobbered.
     const { title, start, end } = patch;
     if ("dateFormat" in patch) setActiveDateFormat(patch.dateFormat || "MDY");
+    if ("timeFormat" in patch) setActiveTimeFormat(patch.timeFormat || "12");
     const parsedStart = parseTimelineInput(start);
     const parsedEnd = parseTimelineInput(end);
     setTimelineData((prevData) => {
@@ -1280,6 +1325,8 @@ function App() {
       if (!nextFile.scaleType || nextFile.scaleType === "default") delete nextFile.scaleType;
       if (!nextFile.logScaleFactor || nextFile.scaleType !== "logarithmic") delete nextFile.logScaleFactor;
       if (!nextFile.dateFormat || nextFile.dateFormat === "MDY") delete nextFile.dateFormat;
+      const defaultTimeFormat = nextFile.dateFormat === "ISO" ? "24" : "12";
+      if (!nextFile.timeFormat || nextFile.timeFormat === defaultTimeFormat) delete nextFile.timeFormat;
       if (!nextFile.layout) delete nextFile.layout;
       if (!nextFile.branchOrdering) delete nextFile.branchOrdering;
       if (!nextFile.fixedEventHeight) delete nextFile.fixedEventHeight;
@@ -2509,6 +2556,8 @@ function App() {
               onChipQueryChange={setChipQuery}
               tagFilterRequest={tagFilterRequest}
               focusSpanRequest={focusSpanRequest}
+              coordPickRequest={coordPickRequest}
+              onCoordinatePicked={handleCoordinatePicked}
               tagColors={timelineData.file?.tagColors || {}}
               keybinds={keybinds}
               onSetViewMode={filteredTimelineData?.file?.useSpreadsheet ? setViewMode : undefined}
@@ -2643,6 +2692,8 @@ function App() {
                 onSelectNext={handleSelectNext}
                 prevElement={selectionNavigation.prevElement}
                 nextElement={selectionNavigation.nextElement}
+                coordPickTargetId={coordPickRequest?.id ?? null}
+                onRequestCoordPick={handleRequestCoordPick}
               />
               </ErrorBoundary>
             </aside>

@@ -1156,3 +1156,46 @@
   font-size: var(--text-sm, 13px);
   pointer-events: none;
 }
+
+/* Coordinate picking from the right panel */
+.timeline-map-view.is-picking .leaflet-container,
+.timeline-map-view.is-picking .leaflet-grab {
+  cursor: crosshair;
+}
+
+/* Markers must not swallow the pick click */
+.timeline-map-view.is-picking .leaflet-marker-pane,
+.timeline-map-view.is-picking .leaflet-tooltip-pane {
+  pointer-events: none;
+}
+
+.map-pick-banner {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(520px, 80vw);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--link-color);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.map-pick-banner span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-pick-banner-hint {
+  color: var(--text-subtle);
+  flex-shrink: 0;
+}

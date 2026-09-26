@@ -15,10 +15,10 @@ import {
   MONTH_LABELS,
 } from "../utils/timelineUtils";
 import { isFontReady, watchFontLoad } from "../utils/fontGate";
-import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, fractionalYearToDate, daysInMonth, todayFractionalYear, displayDateLabel, formatDuration } from "../utils/dateUtils";
+import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, fractionalYearToDate, daysInMonth, todayFractionalYear, displayDateTimeLabel, formatDuration } from "../utils/dateUtils";
 import { withAlpha, blendColors, normalizeColor } from "../utils/colorUtils";
 import { parseFilterQuery, matchesFilter, tokenizeFilterQuery, buildFilterContext, normalizeTag, quoteFilterValue } from "../utils/filterUtils";
-import { FileJson, Image, Video, Settings, Plus, Minus, CopyPlus, Trash2, Edit2, ListFilter, Play, Pause, Tag, Eye, EyeOff, Map as MapIcon, GanttChartSquare, Table2, ExternalLink, HelpCircle, Maximize2, X, History, Crosshair } from "lucide-react";
+import { FileJson, Image, Video, Settings, Plus, Minus, CopyPlus, Trash2, Edit2, ListFilter, Play, Pause, Tag, Eye, EyeOff, Map as MapIcon, MapPin, GanttChartSquare, Table2, ExternalLink, HelpCircle, Maximize2, X, History, Crosshair } from "lucide-react";
 import { ICON_MAP } from "../config/elementIcons";
 
 const FILTER_HISTORY_KEY = "timelines-filter-query-history";
@@ -435,6 +435,8 @@ const TimelineView = forwardRef(function TimelineView({
   onChipQueryChange,
   tagFilterRequest,
   focusSpanRequest,
+  coordPickRequest,
+  onCoordinatePicked,
   suppressFocusSelect = false,
   tagColors = {},
   keybinds = {},
@@ -2003,6 +2005,16 @@ const TimelineView = forwardRef(function TimelineView({
     if (!suppressFocusSelect) handleSelect(spanId);
     pendingCenterRef.current = spanId;
   };
+
+  // Coordinate picker opened from the right panel switches to map view
+  const lastCoordPickRequestRef = useRef(coordPickRequest?.n ?? 0);
+  useEffect(() => {
+    const n = coordPickRequest?.n ?? 0;
+    if (!n || n === lastCoordPickRequestRef.current) return;
+    lastCoordPickRequestRef.current = n;
+    if (file.useMaps) setShowMap(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coordPickRequest]);
 
   // Span focused from the sidebar
   const lastFocusRequestRef = useRef(focusSpanRequest?.n ?? 0);
@@ -4114,7 +4126,7 @@ const TimelineView = forwardRef(function TimelineView({
                           )}
                           {!hideSpanYears && (
                             <span className="span-years" style={{ color: spanTextColor, opacity: 0.7 }}>
-                              {formatApproxRange(span, displayDateLabel(span.startLabel) ?? formatYear(span.start, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), displayDateLabel(span.endLabel) ?? formatYear(span.end, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), file.approxID)}
+                              {formatApproxRange(span, displayDateTimeLabel(span.startLabel, span.startTime) ?? formatYear(span.start, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), displayDateTimeLabel(span.endLabel, span.endTime) ?? formatYear(span.end, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), file.approxID)}
                             </span>
                           )}
                           {!hideSpanYears && (() => {
@@ -4210,7 +4222,7 @@ const TimelineView = forwardRef(function TimelineView({
                           ><ExternalLink size={11} strokeWidth={2.7} /></a>
                         )}
                         {(event.hideYears !== true || (Array.isArray(event.tags) ? event.tags : []).some((t) => pinnedTags.includes(t))) && <div className="event-date">
-                          {event.hideYears !== true && <span className="event-year">{withApproxLabel(displayDateLabel(event.dateLabel) ?? formatYear(event.date, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), file.approxID, event.approximate === true)}</span>}
+                          {event.hideYears !== true && <span className="event-year">{withApproxLabel(displayDateTimeLabel(event.dateLabel, event.time) ?? formatYear(event.date, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), file.approxID, event.approximate === true)}</span>}
                           {(() => {
                             const visiblePinnedTags = (Array.isArray(event.tags) ? event.tags : [])
                               .filter((tag) => pinnedTags.includes(tag));
@@ -4336,7 +4348,7 @@ const TimelineView = forwardRef(function TimelineView({
                   )}
                   {!hideSpanYears && (
                     <span className="span-years" style={{ color: spanTextColor, opacity: 0.7 }}>
-                      {formatApproxRange(span, displayDateLabel(span.startLabel) ?? formatYear(span.start, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), displayDateLabel(span.endLabel) ?? formatYear(span.end, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), file.approxID)}
+                      {formatApproxRange(span, displayDateTimeLabel(span.startLabel, span.startTime) ?? formatYear(span.start, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), displayDateTimeLabel(span.endLabel, span.endTime) ?? formatYear(span.end, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), file.approxID)}
                     </span>
                   )}
                   {!hideSpanYears && (() => {
@@ -4565,7 +4577,7 @@ const TimelineView = forwardRef(function TimelineView({
                 <div className={event.thumbnail && event.thumbnailStyle !== "banner" ? "event-text-content" : ""}>
                 <div className="event-title">{event.icon && ICON_MAP[event.icon] && (() => { const I = ICON_MAP[event.icon]; return <I size={evFontSize} className="event-title-icon" />; })()}{event.title}</div>
                 {(event.hideYears !== true || (Array.isArray(event.tags) ? event.tags : []).some((t) => pinnedTags.includes(t))) && <div className="event-date">
-                  {event.hideYears !== true && <span className="event-year">{withApproxLabel(displayDateLabel(event.dateLabel) ?? formatYear(event.date, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), file.approxID, event.approximate === true)}</span>}
+                  {event.hideYears !== true && <span className="event-year">{withApproxLabel(displayDateTimeLabel(event.dateLabel, event.time) ?? formatYear(event.date, file.negID, file.posID, file?.useCalendar === true, file.hideDecimals), file.approxID, event.approximate === true)}</span>}
                   {(() => {
                     const visiblePinnedTags = (Array.isArray(event.tags) ? event.tags : [])
                       .filter((tag) => pinnedTags.includes(tag));
@@ -4776,8 +4788,21 @@ const TimelineView = forwardRef(function TimelineView({
             viewportYear={deferredMapViewportYear}
             selectedId={selectedId}
             fileConfig={file}
+            pickMode={!!coordPickRequest?.id}
+            onPickCoordinate={onCoordinatePicked}
           />
         </Suspense>
+      )}
+
+      {showMap && coordPickRequest?.id && (
+        <div className="map-pick-banner">
+          <MapPin size={14} />
+          <span>
+            Click the map to set coordinates
+            {coordPickRequest.title ? ` for "${coordPickRequest.title}"` : ""}
+          </span>
+          <span className="map-pick-banner-hint">Esc to cancel</span>
+        </div>
       )}
 
       <div className="timeline-canvas-bar" style={{ right: `${zoomButtonOffset}px` }}>

@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Tooltip, Rectangle, useMap, useMapEven
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { formatYear, withApproxLabel, formatApproxRange } from "../utils/timelineUtils";
-import { displayDateLabel } from "../utils/dateUtils";
+import { displayDateTimeLabel } from "../utils/dateUtils";
 
 const DEFAULT_COLOR = "#6b7280";
 const TYPE_LABEL = { event: "Event", span: "Span", era: "Era" };
@@ -116,20 +116,36 @@ function isMarkerVisibleAtViewportYear(el, viewportYear, fileConfig) {
 function formatElementDate(el, fileConfig) {
   const { negID, posID, approxID, useCalendar, hideDecimals } = fileConfig ?? {};
   if (el.type === "event") {
-    const year = displayDateLabel(el.dateLabel) ?? (el.date != null ? formatYear(el.date, negID, posID, useCalendar === true, hideDecimals) : null);
+    const year = displayDateTimeLabel(el.dateLabel, el.time) ?? (el.date != null ? formatYear(el.date, negID, posID, useCalendar === true, hideDecimals) : null);
     return withApproxLabel(year ?? "", approxID, el.approximate === true);
   }
-  const start = displayDateLabel(el.startLabel) ?? (el.start != null ? formatYear(el.start, negID, posID, useCalendar === true, hideDecimals) : null);
-  const end = displayDateLabel(el.endLabel) ?? (el.end != null ? formatYear(el.end, negID, posID, useCalendar === true, hideDecimals) : null);
+  const start = displayDateTimeLabel(el.startLabel, el.startTime) ?? (el.start != null ? formatYear(el.start, negID, posID, useCalendar === true, hideDecimals) : null);
+  const end = displayDateTimeLabel(el.endLabel, el.endTime) ?? (el.end != null ? formatYear(el.end, negID, posID, useCalendar === true, hideDecimals) : null);
   if (start && end) return formatApproxRange(el, start, end, approxID);
   if (start) return withApproxLabel(start, approxID, el.approxStart === true);
   return withApproxLabel(end ?? "", approxID, el.approxEnd === true);
 }
 
-function MapClickHandler({ onSelect }) {
+// Wrap into [-180, 180] so clicks on the repeated world copies stay valid
+function normalizeLng(lng) {
+  return ((((lng + 180) % 360) + 360) % 360) - 180;
+}
+
+function roundCoord(value) {
+  return Math.round(value * 1e6) / 1e6;
+}
+
+function MapClickHandler({ onSelect, pickMode, onPickCoordinate }) {
   useMapEvents({
     click: (e) => {
       if (e.originalEvent?.target?.closest?.(".leaflet-marker-icon")) return;
+      if (pickMode) {
+        const lat = Number(e.latlng?.lat);
+        const lng = Number(e.latlng?.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        onPickCoordinate?.({ lat: roundCoord(lat), lng: roundCoord(normalizeLng(lng)) });
+        return;
+      }
       onSelect?.(null);
     }
   });
@@ -285,7 +301,7 @@ function isOpenStreetMapTileUrl(url) {
   return /^https:\/\/(?:[a-z0-9-]+\.)*tile\.openstreetmap\.org\//i.test(url);
 }
 
-export default memo(forwardRef(function MapView({ elements = [], onSelect, onOpenContextMenu, onAltWheelPan, onCtrlWheelZoom, viewportYear, selectedId, fileConfig }, ref) {
+export default memo(forwardRef(function MapView({ elements = [], onSelect, onOpenContextMenu, onAltWheelPan, onCtrlWheelZoom, viewportYear, selectedId, fileConfig, pickMode = false, onPickCoordinate }, ref) {
   const spanById = useMemo(() => {
     const map = new Map();
     elements.forEach((el) => { if (el.type === "span") map.set(el.id, el); });
@@ -309,7 +325,7 @@ export default memo(forwardRef(function MapView({ elements = [], onSelect, onOpe
   const tileAttribution = isOpenStreetMapTileUrl(tileUrl) ? DEFAULT_ATTRIBUTION : "";
 
   return (
-    <div className="timeline-map-view">
+    <div className={pickMode ? "timeline-map-view is-picking" : "timeline-map-view"}>
       <MapContainer
         center={initialView.center}
         zoom={initialView.zoom}
@@ -319,7 +335,7 @@ export default memo(forwardRef(function MapView({ elements = [], onSelect, onOpe
         maxBounds={[[-85.0511, -270], [85.0511, 270]]}
         maxBoundsViscosity={1.0}
       >
-        <MapClickHandler onSelect={onSelect} />
+        <MapClickHandler onSelect={onSelect} pickMode={pickMode} onPickCoordinate={onPickCoordinate} />
         <MapContextMenuHandler onOpenContextMenu={onOpenContextMenu} />
         <HoverCleanupHandler onHoverChange={setHoveredId} />
         <MapControls controlRef={ref} />

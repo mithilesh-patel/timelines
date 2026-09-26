@@ -1,18 +1,61 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
-import { Maximize2, Minimize2, Underline, Link, Trash2, Unlink, ChevronLeft, ChevronRight, ChevronDown, Pencil, ExternalLink, Calendar, Clock, FileText, BookOpen, ImagePlus, RotateCcw, X } from "lucide-react";
+import { Maximize2, Minimize2, Underline, Link, Trash2, Unlink, ChevronLeft, ChevronRight, ChevronDown, Pencil, ExternalLink, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X } from "lucide-react";
 import NoteEditor from "./NoteEditor";
 import WikiSection from "./WikiSection";
 import SourcesSection from "./SourcesSection";
 import { useNoteManagement } from "../hooks/useNoteManagement";
 import IconPicker from "./IconPicker";
 import { ICON_MAP } from "../config/elementIcons";
-import { parseTimelineInput, fractionalYearToDate, displayDateLabel, formatDateForInput, formatCalendarDate, formatDuration } from "../utils/dateUtils";
+import { parseTimelineInput, fractionalYearToDate, displayDateTimeLabel, formatDateForInput, formatCalendarDate, formatDuration, formatTimeOfDay, isValidTimeOfDay } from "../utils/dateUtils";
 
 const DYNAMIC_DATE_OPTIONS = [
   { label: "Today", value: "current" },
   { label: "This month", value: "current-month" },
   { label: "This year", value: "current-year" },
 ];
+
+const timePad2 = (n) => String(n).padStart(2, "0");
+const TIME_PRESET_SLOTS = Array.from({ length: 48 }, (_, i) => `${timePad2(Math.floor(i / 2))}:${i % 2 === 0 ? "00" : "30"}`);
+
+const nearestTimePresetSlot = (timeValue) => {
+  let minutesOfDay;
+  if (isValidTimeOfDay(timeValue)) {
+    const [h, m] = timeValue.split(":").map(Number);
+    minutesOfDay = h * 60 + m;
+  } else {
+    const now = new Date();
+    minutesOfDay = now.getHours() * 60 + now.getMinutes();
+  }
+  const rounded = Math.round(minutesOfDay / 30) * 30 % 1440;
+  return `${timePad2(Math.floor(rounded / 60))}:${timePad2(rounded % 60)}`;
+};
+
+const ALL_TIME_SLOTS = Array.from({ length: 1440 }, (_, i) => `${timePad2(Math.floor(i / 60))}:${timePad2(i % 60)}`);
+const TIME_TEXT_MATCH_LIMIT = 30;
+
+const normTimeText = (s) => s.toLowerCase().replace(/\s+/g, "");
+
+const timeSlotMatchesQuery = (slot, query) => {
+  const [hStr, mStr] = slot.split(":");
+  const keys = [slot, `${Number(hStr)}:${mStr}`];
+  const display = formatTimeOfDay(slot);
+  if (display) keys.push(display);
+  return keys.some((k) => normTimeText(k).startsWith(query));
+};
+
+// Accepts "15:30", "3:30", "3:30pm", "3pm", "3 p.m."
+const parseTypedTime = (raw) => {
+  const s = raw.trim().toLowerCase();
+  if (!s) return null;
+  let m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(s);
+  if (m) return `${timePad2(Number(m[1]))}:${m[2]}`;
+  m = /^([1-9]|1[0-2])(?::([0-5]\d))?\s*([ap])\.?m?\.?$/.exec(s);
+  if (m) {
+    const h = (Number(m[1]) % 12) + (m[3] === "p" ? 12 : 0);
+    return `${timePad2(h)}:${m[2] || "00"}`;
+  }
+  return null;
+};
 import { formatYear, withApproxLabel, formatApproxRange, DEFAULT_APPROX_LABEL } from "../utils/timelineUtils";
 import { isValidIdValue, isValidTagValue, normalizeTagValue, buildValidatedUpdate } from "../utils/validation";
 import { normalizeColor } from "../utils/colorUtils";
@@ -60,6 +103,8 @@ export default function RightPanel({
   nextElement,
   readOnly = false,
   onClose,
+  coordPickTargetId = null,
+  onRequestCoordPick,
 }) {
   const [formData, setFormData] = useState(null);
   const [validationErrors, setValidationErrors] = useState([]);
@@ -125,49 +170,67 @@ export default function RightPanel({
   const [isNoteCollapsed, setIsNoteCollapsed] = useState(false);
   const [thumbnailMeta, setThumbnailMeta] = useState(null);
   const panelRef = useRef(null);
-  const datePickerRefs = useRef({});
   const TAG_MAX_LENGTH = 32;
   const ID_MAX_LENGTH = 60;
   const showCalendarInputIcon = timelineData?.file?.useCalendar === true;
-  const [dynamicMenuField, setDynamicMenuField] = useState(null);
+  const [calendarMenuField, setCalendarMenuField] = useState(null);
+  const [timeMenuField, setTimeMenuField] = useState(null);
+  const [timeTextDraft, setTimeTextDraft] = useState({});
 
   const applyDynamicDate = (field, keyword) => {
     const next = { ...formData, [field]: keyword };
     setFormData(next);
     commitDraft(next);
-    setDynamicMenuField(null);
+    setCalendarMenuField(null);
   };
 
   useEffect(() => {
-    if (!dynamicMenuField) return;
+    if (!calendarMenuField && !timeMenuField) return;
     const close = (e) => {
-      // ignore clicks on any dynamic-date toggle or menu so toggling/selecting works
-      if (e.target.closest?.(".dynamic-date-menu, .edit-input-icon-button-dynamic")) return;
-      setDynamicMenuField(null);
+      // ignore clicks inside any date/time toggle or menu so toggling/selecting works
+      if (e.target.closest?.(".dynamic-date-menu, .edit-input-icon-button-dynamic, .edit-time-chip")) return;
+      setCalendarMenuField(null);
+      setTimeMenuField(null);
     };
-    const onKeyDown = (e) => { if (e.key === "Escape") setDynamicMenuField(null); };
+    const onKeyDown = (e) => {
+      if (e.key !== "Escape") return;
+      setCalendarMenuField(null);
+      setTimeMenuField(null);
+    };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [dynamicMenuField]);
+  }, [calendarMenuField, timeMenuField]);
 
-  const renderDynamicDateButton = (field) => (
+  const renderCalendarMenuButton = (field, fallbackValue) => (
     <>
       <button
         type="button"
-        className={`edit-input-icon-button edit-input-icon-button-dynamic${dynamicMenuField === field ? " is-open" : ""}`}
-        aria-label="Insert dynamic date"
-        title="Dynamic date (stays anchored to the current date)"
+        className={`edit-input-icon-button edit-input-icon-button-dynamic${calendarMenuField === field ? " is-open" : ""}`}
+        aria-label="Open date options"
+        title="Pick a date, or insert a dynamic date"
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setDynamicMenuField((v) => (v === field ? null : field))}
+        onClick={() => setCalendarMenuField((v) => (v === field ? null : field))}
       >
-        <Clock size={14} className="edit-input-icon" aria-hidden="true" />
+        <Calendar size={14} className="edit-input-icon" aria-hidden="true" />
       </button>
-      {dynamicMenuField === field && (
-        <div className="span-relation-dropdown-menu dynamic-date-menu">
+      {calendarMenuField === field && (
+        <div className="span-relation-dropdown-menu dynamic-date-menu edit-calendar-menu">
+          <input
+            type="date"
+            className="edit-calendar-menu-input"
+            autoFocus
+            value={getPickerIsoValue(formData[field], fallbackValue)}
+            min={calendarMinIso || undefined}
+            max={calendarMaxIso || undefined}
+            onChange={(e) => {
+              handleCalendarPick(field, e.target.value);
+              setCalendarMenuField(null);
+            }}
+          />
           {DYNAMIC_DATE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -182,6 +245,132 @@ export default function RightPanel({
       )}
     </>
   );
+
+  const renderTimeIconButton = (inputField, timeField, isSecondSlot) => {
+    const timeValue = formData?.[timeField];
+    const draft = timeTextDraft[inputField];
+    const displayValue = draft ?? formatTimeOfDay(timeValue) ?? "";
+    const query = normTimeText(draft ?? "");
+    const visibleSlots = query
+      ? ALL_TIME_SLOTS.filter((slot) => timeSlotMatchesQuery(slot, query)).slice(0, TIME_TEXT_MATCH_LIMIT)
+      : TIME_PRESET_SLOTS;
+
+    const clearDraft = () => setTimeTextDraft((prev) => {
+      const next = { ...prev };
+      delete next[inputField];
+      return next;
+    });
+
+    const pickSlot = (slot) => {
+      const next = { ...formData, [timeField]: slot };
+      setFormData(next);
+      commitDraft(next);
+      clearDraft();
+      setTimeMenuField(null);
+    };
+
+    const clearTime = () => {
+      const next = { ...formData };
+      delete next[timeField];
+      setFormData(next);
+      commitDraft(next);
+      clearDraft();
+      setTimeMenuField(null);
+    };
+
+    const commitTypedText = (raw) => {
+      const parsed = parseTypedTime(raw);
+      if (parsed) {
+        const next = { ...formData, [timeField]: parsed };
+        setFormData(next);
+        commitDraft(next);
+      } else if (!raw.trim()) {
+        const next = { ...formData };
+        delete next[timeField];
+        setFormData(next);
+        commitDraft(next);
+      }
+      clearDraft();
+    };
+
+    return (
+      <>
+        <button
+          type="button"
+          className={`edit-input-icon-button edit-input-icon-button-dynamic${isSecondSlot ? " edit-input-icon-button-slot2" : ""}${timeMenuField === inputField ? " is-open" : ""}`}
+          aria-label={timeValue ? "Edit time" : "Add a time"}
+          title={timeValue ? "Edit time of day" : "Add a time of day"}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setTimeMenuField((v) => (v === inputField ? null : inputField))}
+        >
+          <Clock size={14} className="edit-input-icon" aria-hidden="true" />
+        </button>
+        {timeMenuField === inputField && (
+          <div className="span-relation-dropdown-menu dynamic-date-menu edit-time-menu">
+            <div className="edit-time-menu-label">Time</div>
+            <input
+              type="text"
+              className="edit-time-menu-input"
+              placeholder="e.g. 3:30 PM"
+              value={displayValue}
+              autoFocus
+              onChange={(e) => {
+                const val = e.target.value;
+                setTimeTextDraft((prev) => ({ ...prev, [inputField]: val }));
+              }}
+              onBlur={(e) => commitTypedText(e.target.value)}
+            />
+            <div
+              className="edit-time-preset-list"
+              ref={(node) => {
+                if (!node || query) return;
+                const target = nearestTimePresetSlot(timeValue);
+                node.querySelector(`[data-slot="${target}"]`)?.scrollIntoView({ block: "center" });
+              }}
+            >
+              {visibleSlots.length > 0 ? visibleSlots.map((slot) => (
+                <button
+                  key={slot}
+                  type="button"
+                  data-slot={slot}
+                  className={`span-relation-dropdown-item${slot === timeValue ? " active" : ""}`}
+                  onMouseDown={() => pickSlot(slot)}
+                >
+                  {formatTimeOfDay(slot)}
+                </button>
+              )) : (
+                <div className="edit-time-preset-empty">No matching times</div>
+              )}
+            </div>
+            {timeValue && (
+              <button
+                type="button"
+                className="span-relation-dropdown-item"
+                onMouseDown={clearTime}
+              >
+                Clear time
+              </button>
+            )}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const renderTimeChip = (inputField, timeField) => {
+    const displayTime = formatTimeOfDay(formData?.[timeField]);
+    if (!displayTime) return null;
+    return (
+      <button
+        type="button"
+        className="edit-time-chip"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setTimeMenuField((v) => (v === inputField ? null : inputField))}
+      >
+        {displayTime}
+      </button>
+    );
+  };
 
   const pushValidationError = (message) => {
     if (!message) return;
@@ -276,17 +465,6 @@ export default function RightPanel({
     setFormData(nextDraft);
     commitDraft(nextDraft);
   }, [formData, formatIsoAsEditableDate]);
-
-  const openCalendarPicker = useCallback((pickerKey) => {
-    const input = datePickerRefs.current[pickerKey];
-    if (!input) return;
-    if (typeof input.showPicker === "function") {
-      input.showPicker();
-      return;
-    }
-    input.focus();
-    input.click();
-  }, []);
 
   useEffect(() => {
     const anyOpen = isSpanParentMenuOpen || isMergeParentMenuOpen ||
@@ -866,7 +1044,7 @@ export default function RightPanel({
                   <div className="view-separator" />
                   <p>
                     {withApproxLabel(
-                      displayDateLabel(formData.dateLabel) ?? formatDisplayYear(formData.date),
+                      displayDateTimeLabel(formData.dateLabel, formData.time) ?? formatDisplayYear(formData.date),
                       timelineData?.file?.approxID,
                       formData.approximate === true
                     )}
@@ -879,8 +1057,8 @@ export default function RightPanel({
                 <p>
                   {formatApproxRange(
                     formData,
-                    displayDateLabel(formData.startLabel) ?? formatDisplayYear(formData.start),
-                    displayDateLabel(formData.endLabel) ?? formatDisplayYear(formData.end),
+                    displayDateTimeLabel(formData.startLabel, formData.startTime) ?? formatDisplayYear(formData.start),
+                    displayDateTimeLabel(formData.endLabel, formData.endTime) ?? formatDisplayYear(formData.end),
                     timelineData?.file?.approxID,
                     " – "
                   )}
@@ -1132,47 +1310,31 @@ export default function RightPanel({
                 <div className="edit-row">
                   <label htmlFor="date">Date</label>
                   <div className="edit-separator" />
-                  <div className={`edit-input-shell${showCalendarInputIcon ? " has-left-icon has-dynamic-icon" : ""}`}>
-                    {showCalendarInputIcon && (
-                      <>
-                        <button
-                          type="button"
-                          className="edit-input-icon-button"
-                          aria-label="Open calendar"
-                          onClick={() => openCalendarPicker("date")}
-                        >
-                          <Calendar size={14} className="edit-input-icon" aria-hidden="true" />
-                        </button>
-                        <input
-                          ref={(node) => {
-                            if (node) datePickerRefs.current.date = node;
-                            else delete datePickerRefs.current.date;
-                          }}
-                          type="date"
-                          tabIndex={-1}
-                          aria-hidden="true"
-                          className="edit-input-native-date"
-                          value={getPickerIsoValue(formData.dateInput, selectedElement?.date)}
-                          min={calendarMinIso || undefined}
-                          max={calendarMaxIso || undefined}
-                          onChange={(e) => handleCalendarPick("dateInput", e.target.value)}
-                        />
-                      </>
-                    )}
-                    <input
-                      id="date"
-                      type="text"
-                      inputMode="numeric"
-                      value={formData.dateInput ?? ""}
-                      onChange={(e) => {
-                        handleChange("dateInput", e.target.value);
-                      }}
-                      onBlur={(e) => commitDraft({ ...formData, dateInput: e.target.value })}
-                      className="edit-input"
-                      maxLength={20}
-                    />
-                    {showCalendarInputIcon && renderDynamicDateButton("dateInput")}
-                  </div>
+                  {(() => {
+                    const showTimeIcon = parseTimelineInput(formData.dateInput).precision === "day";
+                    const iconCount = (showCalendarInputIcon ? 1 : 0) + (showTimeIcon ? 1 : 0);
+                    return (
+                      <div className="edit-input-row">
+                        <div className={`edit-input-shell${iconCount > 0 ? " has-left-icon" : ""}${iconCount > 1 ? " has-dynamic-icon" : ""}`}>
+                          {showCalendarInputIcon && renderCalendarMenuButton("dateInput", selectedElement?.date)}
+                          {showTimeIcon && renderTimeIconButton("dateInput", "time", showCalendarInputIcon)}
+                          <input
+                            id="date"
+                            type="text"
+                            inputMode="numeric"
+                            value={formData.dateInput ?? ""}
+                            onChange={(e) => {
+                              handleChange("dateInput", e.target.value);
+                            }}
+                            onBlur={(e) => commitDraft({ ...formData, dateInput: e.target.value })}
+                            className="edit-input"
+                            maxLength={20}
+                          />
+                        </div>
+                        {renderTimeChip("dateInput", "time")}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ) : (
@@ -1181,94 +1343,62 @@ export default function RightPanel({
                   <div className="edit-row">
                     <label htmlFor="start">Start Date</label>
                     <div className="edit-separator" />
-                  <div className={`edit-input-shell${showCalendarInputIcon ? " has-left-icon has-dynamic-icon" : ""}`}>
-                    {showCalendarInputIcon && (
-                      <>
-                        <button
-                          type="button"
-                          className="edit-input-icon-button"
-                          aria-label="Open calendar"
-                          onClick={() => openCalendarPicker("start")}
-                        >
-                          <Calendar size={14} className="edit-input-icon" aria-hidden="true" />
-                        </button>
-                        <input
-                          ref={(node) => {
-                            if (node) datePickerRefs.current.start = node;
-                            else delete datePickerRefs.current.start;
-                          }}
-                          type="date"
-                          tabIndex={-1}
-                          aria-hidden="true"
-                          className="edit-input-native-date"
-                          value={getPickerIsoValue(formData.startInput, selectedElement?.start)}
-                          min={calendarMinIso || undefined}
-                          max={calendarMaxIso || undefined}
-                          onChange={(e) => handleCalendarPick("startInput", e.target.value)}
-                        />
-                      </>
-                    )}
-                    <input
-                      id="start"
-                      type="text"
-                      inputMode="numeric"
-                      value={formData.startInput ?? ""}
-                      onChange={(e) => {
-                        handleChange("startInput", e.target.value);
-                      }}
-                      onBlur={(e) => commitDraft({ ...formData, startInput: e.target.value })}
-                      className="edit-input"
-                      maxLength={20}
-                    />
-                    {showCalendarInputIcon && renderDynamicDateButton("startInput")}
-                  </div>
+                    {(() => {
+                      const showTimeIcon = parseTimelineInput(formData.startInput).precision === "day";
+                      const iconCount = (showCalendarInputIcon ? 1 : 0) + (showTimeIcon ? 1 : 0);
+                      return (
+                        <div className="edit-input-row">
+                          <div className={`edit-input-shell${iconCount > 0 ? " has-left-icon" : ""}${iconCount > 1 ? " has-dynamic-icon" : ""}`}>
+                            {showCalendarInputIcon && renderCalendarMenuButton("startInput", selectedElement?.start)}
+                            {showTimeIcon && renderTimeIconButton("startInput", "startTime", showCalendarInputIcon)}
+                            <input
+                              id="start"
+                              type="text"
+                              inputMode="numeric"
+                              value={formData.startInput ?? ""}
+                              onChange={(e) => {
+                                handleChange("startInput", e.target.value);
+                              }}
+                              onBlur={(e) => commitDraft({ ...formData, startInput: e.target.value })}
+                              className="edit-input"
+                              maxLength={20}
+                            />
+                          </div>
+                          {renderTimeChip("startInput", "startTime")}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="form-group">
                   <div className="edit-row">
                     <label htmlFor="end">End Date</label>
                     <div className="edit-separator" />
-                  <div className={`edit-input-shell${showCalendarInputIcon ? " has-left-icon has-dynamic-icon" : ""}`}>
-                    {showCalendarInputIcon && (
-                      <>
-                        <button
-                          type="button"
-                          className="edit-input-icon-button"
-                          aria-label="Open calendar"
-                          onClick={() => openCalendarPicker("end")}
-                        >
-                          <Calendar size={14} className="edit-input-icon" aria-hidden="true" />
-                        </button>
-                        <input
-                          ref={(node) => {
-                            if (node) datePickerRefs.current.end = node;
-                            else delete datePickerRefs.current.end;
-                          }}
-                          type="date"
-                          tabIndex={-1}
-                          aria-hidden="true"
-                          className="edit-input-native-date"
-                          value={getPickerIsoValue(formData.endInput, selectedElement?.end)}
-                          min={calendarMinIso || undefined}
-                          max={calendarMaxIso || undefined}
-                          onChange={(e) => handleCalendarPick("endInput", e.target.value)}
-                        />
-                      </>
-                    )}
-                    <input
-                      id="end"
-                      type="text"
-                      inputMode="numeric"
-                      value={formData.endInput ?? ""}
-                      onChange={(e) => {
-                        handleChange("endInput", e.target.value);
-                      }}
-                      onBlur={(e) => commitDraft({ ...formData, endInput: e.target.value })}
-                      className="edit-input"
-                      maxLength={20}
-                    />
-                    {showCalendarInputIcon && renderDynamicDateButton("endInput")}
-                  </div>
+                    {(() => {
+                      const showTimeIcon = parseTimelineInput(formData.endInput).precision === "day";
+                      const iconCount = (showCalendarInputIcon ? 1 : 0) + (showTimeIcon ? 1 : 0);
+                      return (
+                        <div className="edit-input-row">
+                          <div className={`edit-input-shell${iconCount > 0 ? " has-left-icon" : ""}${iconCount > 1 ? " has-dynamic-icon" : ""}`}>
+                            {showCalendarInputIcon && renderCalendarMenuButton("endInput", selectedElement?.end)}
+                            {showTimeIcon && renderTimeIconButton("endInput", "endTime", showCalendarInputIcon)}
+                            <input
+                              id="end"
+                              type="text"
+                              inputMode="numeric"
+                              value={formData.endInput ?? ""}
+                              onChange={(e) => {
+                                handleChange("endInput", e.target.value);
+                              }}
+                              onBlur={(e) => commitDraft({ ...formData, endInput: e.target.value })}
+                              className="edit-input"
+                              maxLength={20}
+                            />
+                          </div>
+                          {renderTimeChip("endInput", "endTime")}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </>
@@ -1586,6 +1716,22 @@ export default function RightPanel({
                   <label>Coordinates</label>
                   <div className="edit-separator" />
                   <div className="coord-inputs">
+                    {onRequestCoordPick && selectedElement?.id && (() => {
+                      // the picker targets the saved element, so a draft id rename cannot orphan it
+                      const isPicking = coordPickTargetId === selectedElement.id;
+                      return (
+                        <button
+                          type="button"
+                          className={`coord-pick-button${isPicking ? " is-active" : ""}`}
+                          onClick={() => onRequestCoordPick(selectedElement.id, formData.title)}
+                          aria-label="Pick coordinates on the map"
+                          aria-pressed={isPicking}
+                          title={isPicking ? "Cancel picking" : "Pick coordinates on the map"}
+                        >
+                          <MapPin size={14} />
+                        </button>
+                      );
+                    })()}
                     <input
                       id="lat"
                       type="number"
