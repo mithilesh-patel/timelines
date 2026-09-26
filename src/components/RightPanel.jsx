@@ -1798,7 +1798,7 @@ export default function RightPanel({
               </>
             )}
 
-            {formData.type === "era" && (
+            {(formData.type === "span" || formData.type === "era") && (
               <>
                 <div className="form-group">
                   <div className="edit-row">

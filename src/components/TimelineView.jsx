@@ -48,8 +48,6 @@ const HTML2CANVAS_COLOR_PROPERTIES = [
   "border-top-color",
   "border-right-color",
   "border-bottom-color",
-  "border-left-color",
-  "outline-color",
   "text-decoration-color",
   "-webkit-text-stroke-color",
   "box-shadow",
@@ -1229,7 +1227,32 @@ const TimelineView = forwardRef(function TimelineView({
       }
     }
 
+    const tlStartPx = file.start != null ? yearToPx(file.start) : null;
+    const tlEndPx = file.end != null ? yearToPx(file.end) : null;
+    const SPAN_FUZZ = 24;
+    const addSpanFuzz = (span) => {
+      const rawLeft = yearToPx(span.start);
+      const rawRight = yearToPx(span.end);
+      const fuzzStart = span.fuzzyStart === true && (tlStartPx == null || rawLeft >= tlStartPx) ? SPAN_FUZZ : 0;
+      const fuzzEnd = span.fuzzyEnd === true && (tlEndPx == null || rawRight <= tlEndPx) ? SPAN_FUZZ : 0;
+      if (!fuzzStart && !fuzzEnd) return span;
+      const fuzzWidth = span.width + fuzzStart + fuzzEnd;
+      let fadeInPx = fuzzStart * 2;
+      let fadeOutPx = fuzzEnd * 2;
+      if (fadeInPx + fadeOutPx > fuzzWidth) {
+        const scale = fuzzWidth / (fadeInPx + fadeOutPx);
+        fadeInPx *= scale;
+        fadeOutPx *= scale;
+      }
+      return {
+        ...span,
+        fuzz: { left: span.left - fuzzStart, width: fuzzWidth, fadeInPx, fadeOutPx },
+      };
+    };
     const groupLayoutsByStack = [...aboveByStack, ...belowByStack];
+    groupLayoutsByStack.forEach((group) => {
+      group.finalSpans = group.finalSpans.map(addSpanFuzz);
+    });
     groupLayoutsByStack.forEach((group) => {
       const extent = extentById.get(group.id);
       group.extentTop = extent?.top;
@@ -1247,9 +1270,7 @@ const TimelineView = forwardRef(function TimelineView({
       finalEvents.push(...group.finalEvents);
     });
 
-    const tlStartPx = file.start != null ? yearToPx(file.start) : null;
-    const tlEndPx = file.end != null ? yearToPx(file.end) : null;
-    const ERA_FUZZ = 24; 
+    const ERA_FUZZ = 24;
     const finalEras = adjustedEras.map((era) => {
       const rawLeft = yearToPx(era.start);
       const rawRight = yearToPx(era.end);
@@ -4005,6 +4026,32 @@ const TimelineView = forwardRef(function TimelineView({
               >
                 <div className="spans-layer">
                   {groupSpans.map((span) => {
+                    if (!span.fuzz || span.width <= 0) return null;
+                    const placement = spanChildPlacement[span.id];
+                    const isExtension = placement?.mode === "extend";
+                    const mergePlacement = spanMergePlacement[span.id];
+                    const childInset = placement ? (isExtension ? 1 : 2) : 0;
+                    const neckLeft = file?.thinConnectors === true && !!placement && !isExtension && span.spanSize !== "thin" ? 10 : 0;
+                    const neckRight = file?.thinConnectors === true && !!mergePlacement && span.spanSize !== "thin" ? 10 : 0;
+                    const mergeInset = mergePlacement ? 2 : 0;
+                    const fuzzMask = `linear-gradient(to right, transparent 0, #000 ${span.fuzz.fadeInPx}px, #000 calc(100% - ${span.fuzz.fadeOutPx}px), transparent 100%)`;
+                    return (
+                      <div
+                        key={`fuzz-${span.id}`}
+                        className="span-fuzz"
+                        style={{
+                          left: `${span.fuzz.left - childInset + neckLeft}px`,
+                          width: `${span.fuzz.width + childInset + mergeInset - neckLeft - neckRight}px`,
+                          top: `${spanRenderTopById.get(span.id) ?? span.top}px`,
+                          height: `${span.spanHeight ?? 20}px`,
+                          background: span.color || "var(--secondary-text)",
+                          WebkitMaskImage: fuzzMask,
+                          maskImage: fuzzMask,
+                        }}
+                      />
+                    );
+                  })}
+                  {groupSpans.map((span) => {
                     if (span.width <= 0) return null;
                     const isSelected = selectedId === span.id;
                     const spanTextColor = getReadableTextColor(span.color || "var(--secondary-text)");
@@ -4048,7 +4095,7 @@ const TimelineView = forwardRef(function TimelineView({
                           width: `${span.width + childInset + mergeInset - neckLeft - neckRight}px`,
                           top: `${spanRenderTopById.get(span.id) ?? span.top}px`,
                           height: `${span.spanHeight ?? 20}px`,
-                          background: span.color || "var(--secondary-text)",
+                          background: span.fuzz ? "transparent" : span.color || "var(--secondary-text)",
                         }}
                         {...spanLongPressProps(span)}
                         onClick={(e) => {
@@ -4201,6 +4248,34 @@ const TimelineView = forwardRef(function TimelineView({
 
         {renderLegacyLayers && <div className="spans-layer">
           {finalSpans.map((span) => {
+            if (!span.fuzz || span.width <= 0) return null;
+            const placement = spanChildPlacement[span.id];
+            const isExtension = placement?.mode === "extend";
+            const mergePlacement = spanMergePlacement[span.id];
+            const childInset = placement ? (isExtension ? 1 : 2) : 0;
+            const thinConnectorChild = file?.thinConnectors === true && !!placement && !isExtension && span.spanSize !== "thin";
+            const thinConnectorMergeOut = file?.thinConnectors === true && !!mergePlacement && span.spanSize !== "thin";
+            const neckLeft = thinConnectorChild ? 10 : 0;
+            const neckRight = thinConnectorMergeOut ? 10 : 0;
+            const mergeInset = mergePlacement ? 2 : 0;
+            const fuzzMask = `linear-gradient(to right, transparent 0, #000 ${span.fuzz.fadeInPx}px, #000 calc(100% - ${span.fuzz.fadeOutPx}px), transparent 100%)`;
+            return (
+              <div
+                key={`fuzz-${span.id}`}
+                className="span-fuzz"
+                style={{
+                  left: `${span.fuzz.left - childInset + neckLeft}px`,
+                  width: `${span.fuzz.width + childInset + mergeInset - neckLeft - neckRight}px`,
+                  top: `${spanRenderTopById.get(span.id) ?? span.top}px`,
+                  height: `${span.spanHeight ?? 20}px`,
+                  background: span.color || "var(--secondary-text)",
+                  WebkitMaskImage: fuzzMask,
+                  maskImage: fuzzMask,
+                }}
+              />
+            );
+          })}
+          {finalSpans.map((span) => {
             if (span.width <= 0) return null;
             const isSelected = selectedId === span.id;
             const spanTextColor = getReadableTextColor(span.color || "var(--secondary-text)");
@@ -4245,7 +4320,7 @@ const TimelineView = forwardRef(function TimelineView({
                   width: `${span.width + childInset + mergeInset - neckLeft - neckRight}px`,
                   top: `${spanRenderTopById.get(span.id) ?? span.top}px`,
                   height: `${span.spanHeight ?? 20}px`,
-                  background: span.color || "var(--secondary-text)",
+                    background: span.fuzz ? "transparent" : span.color || "var(--secondary-text)",
                 }}
                 {...spanLongPressProps(span)}
                 onClick={(e) => {
